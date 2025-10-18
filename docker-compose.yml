@@ -1,0 +1,344 @@
+# ================================
+# FILE: docker-compose.yml (ROOT DIRECTORY)
+# ================================
+version: '3.8'
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: blockchain_postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: blockchain_api
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - blockchain_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: blockchain_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - blockchain_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bitcoin-node:
+    image: btcpayserver/bitcoin:24.0
+    container_name: blockchain_bitcoin
+    ports:
+      - "8332:8332"
+      - "8333:8333"
+    volumes:
+      - bitcoin_data:/data
+    environment:
+      BITCOIN_NETWORK: testnet
+    command: >
+      bitcoind
+      -server=1
+      -rpcuser=bitcoinrpc
+      -rpcpassword=changeme123
+      -rpcallowip=0.0.0.0/0
+      -rpcbind=0.0.0.0
+      -txindex=1
+      -testnet=1
+    networks:
+      - blockchain_network
+
+  ethereum-node:
+    image: ethereum/client-go:v1.13.5
+    container_name: blockchain_ethereum
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+      - "30303:30303"
+    volumes:
+      - ethereum_data:/root/.ethereum
+    command:
+      - --sepolia
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,txpool
+      - --http.corsdomain=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.port=8546
+      - --ws.api=eth,net,web3,txpool
+      - --ws.origins=*
+    networks:
+      - blockchain_network
+
+volumes:
+  postgres_data:
+  redis_data:
+  bitcoin_data:
+  ethereum_data:
+
+networks:
+  blockchain_network:
+    driver: bridge
+
+
+# ================================
+# FILE: docker-compose.dev.yml (ROOT DIRECTORY)
+# For development with hot reload
+# ================================
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.dev
+    container_name: blockchain_api_dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://user:password@postgres:5432/blockchain_api
+      - REDIS_URL=redis://redis:6379
+      - BITCOIN_RPC_URL=http://bitcoin-node:8332
+      - BITCOIN_RPC_USER=bitcoinrpc
+      - BITCOIN_RPC_PASSWORD=changeme123
+      - ETHEREUM_RPC_URL=http://ethereum-node:8545
+      - ETHEREUM_WS_URL=ws://ethereum-node:8546
+    volumes:
+      - ./apps/api:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - blockchain_network
+    command: npm run dev
+
+networks:
+  blockchain_network:
+    external: true
+
+
+# ================================
+# FILE: apps/api/Dockerfile (API Production)
+# ================================
+FROM node:20-alpine AS base
+
+# Install dependencies only when needed
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Generate Prisma Client
+RUN npx prisma generate
+
+# Build Next.js
+ENV NEXT_TELEMETRY_DISABLED 1
+RUN npm run build
+
+# Production image, copy all the files and run next
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/prisma ./prisma
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+CMD ["node", "server.js"]
+
+
+# ================================
+# FILE: apps/api/Dockerfile.dev (API Development)
+# ================================
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+RUN npx prisma generate
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
+
+
+# ================================
+# FILE: packages/indexer/Dockerfile (Indexer Service)
+# ================================
+FROM node:20-alpine AS base
+
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+RUN npm run build
+
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 indexer
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
+
+USER indexer
+
+CMD ["node", "dist/index.js"]
+
+
+# ================================
+# FILE: .dockerignore (ROOT DIRECTORY)
+# ================================
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+.pnpm-debug.log
+
+# Next.js
+.next
+out
+build
+dist
+
+# Environment
+.env
+.env*.local
+.env.production
+
+# Testing
+coverage
+.nyc_output
+
+# Misc
+.DS_Store
+*.pem
+.vscode
+.idea
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+docs
+
+
+# ================================
+# FILE: docker/postgres/init.sql
+# ================================
+-- Enable TimescaleDB extension
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+-- Create initial tables (Prisma will manage these, but good to have)
+-- This is optional since Prisma migrations will handle it
+
+-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
+-- Create indexes for better performance
+-- These will be created by Prisma, but can be defined here too
+
+
+# ================================
+# FILE: .env.example (ROOT DIRECTORY)
+# ================================
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/blockchain_api"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# Bitcoin Node
+BITCOIN_RPC_URL="http://localhost:8332"
+BITCOIN_RPC_USER="bitcoinrpc"
+BITCOIN_RPC_PASSWORD="changeme123"
+BITCOIN_NETWORK="testnet"
+
+# Ethereum Node
+ETHEREUM_RPC_URL="http://localhost:8545"
+ETHEREUM_WS_URL="ws://localhost:8546"
+ETHEREUM_NETWORK="sepolia"
+
+# API Configuration
+NODE_ENV="development"
+API_PORT=3000
+API_RATE_LIMIT_MAX=100
+API_RATE_LIMIT_WINDOW=900000
+
+# Security
+JWT_SECRET="your-super-secret-jwt-key-change-this-in-production"
+API_KEY_SALT="your-api-key-salt-change-this"
+
+# Logging
+LOG_LEVEL="info"
+
+# CORS
+ALLOWED_ORIGINS="http://localhost:3000,http://localhost:3001"
