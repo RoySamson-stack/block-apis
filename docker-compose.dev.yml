@@ -15,7 +15,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=development
-      - DATABASE_URL=postgresql://user:password@postgres:5432/blockchain_api
+      - DATABASE_URL=postgresql://riot:riot9334@postgres:5432/blockchain_api
       - REDIS_URL=redis://redis:6379
       - BITCOIN_RPC_URL=http://bitcoin-node:8332
       - BITCOIN_RPC_USER=bitcoinrpc

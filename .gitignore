@@ -1,0 +1,14 @@
+# Docker Compose files
+docker-compose.yml
+docker-compose.*.yml
+docker-compose.override.yml
+docker-compose.override.*.yml
+
+# Environment files (secrets)
+.env
+.env.*
+.env.example
+.env.local
+
+# Misc
+TODO

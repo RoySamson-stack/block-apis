@@ -8,8 +8,8 @@ services:
     image: timescale/timescaledb:latest-pg15
     container_name: blockchain_postgres
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: riot
+      POSTGRES_PASSWORD: riot9334
       POSTGRES_DB: blockchain_api
     ports:
       - "5432:5432"
