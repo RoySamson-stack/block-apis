@@ -51,3 +51,5 @@ docker-compose.override.yml
 
 # Internal documentation (not for public repo)
 PROJECT_STATUS.md
+PRODUCTION_READINESS.md
+TODAY_PROGRESS.md
