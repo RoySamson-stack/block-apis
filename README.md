@@ -102,9 +102,9 @@ git clone https://github.com/Roysamson-stack/blocks-apis.git
 cd apps
 ```
 
-2. Start infrastructure services
+2. Start infrastructure services (development)
 ```bash
-docker-compose up -d postgres redis
+docker-compose -f docker-compose.dev.yml up -d postgres redis
 ```
 
 3. Install dependencies
@@ -226,18 +226,35 @@ npx prisma migrate reset
 ```
 
 ### Docker Commands
+
+**Development:**
 ```bash
-# Start all services
-docker-compose up -d
+# Start all services (development)
+docker-compose -f docker-compose.dev.yml up -d
+
+# Start only infrastructure (postgres, redis)
+docker-compose -f docker-compose.dev.yml up -d postgres redis
 
 # View logs
-docker-compose logs -f
+docker-compose -f docker-compose.dev.yml logs -f
 
 # Stop all services
-docker-compose down
+docker-compose -f docker-compose.dev.yml down
 
 # Remove volumes
-docker-compose down -v
+docker-compose -f docker-compose.dev.yml down -v
+```
+
+**Production:**
+```bash
+# Start production services
+docker-compose -f docker-compose.prod.yml up -d
+
+# View logs
+docker-compose -f docker-compose.prod.yml logs -f
+
+# Stop services
+docker-compose -f docker-compose.prod.yml down
 ```
 
 ## Deployment
@@ -250,7 +267,11 @@ npm run start
 
 ### Docker Production
 ```bash
+# Start production services
 docker-compose -f docker-compose.prod.yml up -d
+
+# Start with blockchain nodes (optional)
+docker-compose -f docker-compose.prod.yml --profile with-nodes up -d
 ```
 
 ## Security Considerations

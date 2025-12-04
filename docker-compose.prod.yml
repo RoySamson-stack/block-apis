@@ -1,0 +1,183 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with TimescaleDB
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: blockchain_postgres_prod
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-riot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riot9334}
+      POSTGRES_DB: ${POSTGRES_DB:-blockchain_api}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - blockchain_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riot} -d ${POSTGRES_DB:-blockchain_api}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: blockchain_redis_prod
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - blockchain_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # API Application
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: blockchain_api_prod
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-riot}:${POSTGRES_PASSWORD:-riot9334}@postgres:5432/${POSTGRES_DB:-blockchain_api}?schema=public
+      REDIS_URL: redis://redis:6379
+      
+      # Bitcoin RPC
+      BITCOIN_RPC_URL: ${BITCOIN_RPC_URL:-http://bitcoin-node:8332}
+      BITCOIN_RPC_USER: ${BITCOIN_RPC_USER:-bitcoinrpc}
+      BITCOIN_RPC_PASSWORD: ${BITCOIN_RPC_PASSWORD:-changeme123}
+      BITCOIN_NETWORK: ${BITCOIN_NETWORK:-mainnet}
+      BITCOIN_RPC_FALLBACK_ENABLED: ${BITCOIN_RPC_FALLBACK_ENABLED:-true}
+      
+      # Ethereum RPC
+      ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-http://ethereum-node:8545}
+      ETHEREUM_WS_URL: ${ETHEREUM_WS_URL:-ws://ethereum-node:8546}
+      ETHEREUM_NETWORK: ${ETHEREUM_NETWORK:-mainnet}
+      ETHEREUM_RPC_FALLBACK_ENABLED: ${ETHEREUM_RPC_FALLBACK_ENABLED:-true}
+      ETHEREUM_RPC_FALLBACK_URL: ${ETHEREUM_RPC_FALLBACK_URL:-}
+      
+      # API Configuration
+      PORT: 3000
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
+      ADMIN_SECRET: ${ADMIN_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      API_KEY_SALT: ${API_KEY_SALT}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      
+      # Monitoring
+      ENABLE_METRICS: ${ENABLE_METRICS:-true}
+    ports:
+      - "${API_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - blockchain_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Bitcoin Node (Optional - can use external RPC)
+  bitcoin-node:
+    image: btcpayserver/bitcoin:24.0
+    container_name: blockchain_bitcoin_prod
+    ports:
+      - "${BITCOIN_RPC_PORT:-8332}:8332"
+      - "${BITCOIN_P2P_PORT:-8333}:8333"
+    volumes:
+      - bitcoin_data:/data
+      - ./docker/bitcoin/bitcoin.conf:/bitcoin/.bitcoin/bitcoin.conf
+    environment:
+      BITCOIN_NETWORK: ${BITCOIN_NETWORK:-mainnet}
+    command: >
+      bitcoind
+      -server=1
+      -rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc}
+      -rpcpassword=${BITCOIN_RPC_PASSWORD:-changeme123}
+      -rpcallowip=0.0.0.0/0
+      -rpcbind=0.0.0.0
+      -txindex=1
+      ${BITCOIN_NETWORK:-mainnet} == "testnet" ? "-testnet=1" : ""
+    networks:
+      - blockchain_network
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli -rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc} -rpcpassword=${BITCOIN_RPC_PASSWORD:-changeme123} getblockchaininfo || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    profiles:
+      - with-nodes  # Only start if explicitly requested
+
+  # Ethereum Node (Optional - can use external RPC)
+  ethereum-node:
+    image: ethereum/client-go:v1.13.5
+    container_name: blockchain_ethereum_prod
+    ports:
+      - "${ETHEREUM_RPC_PORT:-8545}:8545"
+      - "${ETHEREUM_WS_PORT:-8546}:8546"
+      - "${ETHEREUM_P2P_PORT:-30303}:30303"
+    volumes:
+      - ethereum_data:/root/.ethereum
+    command:
+      - --${ETHEREUM_NETWORK:-mainnet}
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,net,web3,txpool
+      - --http.corsdomain=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.port=8546
+      - --ws.api=eth,net,web3,txpool
+      - --ws.origins=*
+      - --syncmode=snap
+      - --cache=4096
+    networks:
+      - blockchain_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8545 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    profiles:
+      - with-nodes  # Only start if explicitly requested
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  bitcoin_data:
+    driver: local
+  ethereum_data:
+    driver: local
+
+networks:
+  blockchain_network:
+    driver: bridge
+
