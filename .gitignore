@@ -11,7 +11,7 @@ coverage/
 .next/
 out/
 build/
-dist/
+dist/n 
 
 # Production
 *.log
@@ -53,3 +53,4 @@ docker-compose.override.yml
 PROJECT_STATUS.md
 PRODUCTION_READINESS.md
 TODAY_PROGRESS.md
+MONETIZATION_COMPLETE.md
