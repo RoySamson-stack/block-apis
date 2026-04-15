@@ -87,7 +87,7 @@ services:
 
   api:
     build:
-      context: ./apps/api
+      context: .
       dockerfile: Dockerfile.dev
     container_name: blockchain_api_dev
     ports:
@@ -102,7 +102,7 @@ services:
       - ETHEREUM_RPC_URL=http://ethereum-node:8545
       - ETHEREUM_WS_URL=ws://ethereum-node:8546
     volumes:
-      - ./apps/api:/app
+      - .:/app
       - /app/node_modules
       - /app/.next
     depends_on:

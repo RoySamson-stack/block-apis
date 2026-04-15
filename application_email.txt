@@ -1,0 +1,34 @@
+Hi,
+
+Thank you for the opportunity to apply for the iOS App Store Protocol Reverse Engineering & Automation Script project.
+
+I've prepared a methodology document demonstrating my reverse engineering approach, along with relevant code samples from my existing blockchain API work that uses the same core methodology: understand the protocol, analyze the signing logic, and build a clean automation layer.
+
+**Key Points:**
+- 7+ years in security software engineering (penetration testing, vulnerability assessment)
+- Built Blockchain Transaction API analyzing Bitcoin/Ethereum protocols with Python/TypeScript
+- Hands-on experience with:
+  - mitmproxy/Charles for traffic interception
+  - Frida for runtime instrumentation  
+  - Binary analysis with Ghidra
+  - Bypassing SSL pinning for mobile testing
+
+**What I'll Deliver:**
+1. Python library generating valid App Store request headers dynamically
+2. Demo script covering: login with 2FA, product fetching, download simulation
+3. Analysis document explaining each parameter and generation logic
+4. Timeline: 7-10 days
+
+**Relevant Project:**
+My Blockchain API project (github.com/Roysamson-stack/block-apis) demonstrates:
+- Bitcoin protocol analysis & transaction building
+- Ethereum smart contract interaction
+- Clean Python automation over complex protocols
+
+I'm happy to do a short proof-of-concept task first - intercept and document one App Store endpoint so you can evaluate my approach before the full project.
+
+Looking forward to hearing from you.
+
+Best regards,
+Samson Roy
+roysamson494@gmail.com

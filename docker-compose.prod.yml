@@ -45,7 +45,7 @@ services:
   # API Application
   api:
     build:
-      context: ./apps/api
+      context: .
       dockerfile: Dockerfile
     container_name: blockchain_api_prod
     environment:
