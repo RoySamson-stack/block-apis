@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Network {
+  id            String    @id @default(uuid())
+  name         String    @unique
+  chainId      Int?      @unique
+  symbol       String
+  rpcUrl       String?
+  wsUrl        String?
+  explorerUrl String?
+  isActive    Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  blocks       Block[]
+  addresses    Address[]
+  transactions Transaction[]
+}
+
+model Block {
+  id              String   @id @default(uuid())
+  networkId       String
+  network         Network  @relation(fields: [networkId], references: [id])
+  blockNumber     BigInt
+  blockHash       String   @unique
+  parentHash      String?
+  timestamp       DateTime
+  miner           String?
+  difficulty      BigInt?
+  gasLimit        BigInt?
+  gasUsed         BigInt?
+  transactionCount Int    @default(0)
+  size            Int?
+  nonce           String?
+  extraData       String?
+  baseFeePerGas   BigInt?
+  createdAt       DateTime @default(now())
+  indexedAt       DateTime @default(now())
+  transactions   Transaction[]
+  
+  @@unique([networkId, blockNumber])
+  @@index([networkId, timestamp])
+  @@index([blockHash])
+}
+
+model Address {
+  id          String   @id @default(uuid())
+  networkId   String
+  network     Network  @relation(fields: [networkId], references: [id])
+  address     String
+  balance     String   @default("0")
+  nonce       BigInt   @default(0)
+  codeHash    String?
+  isContract  Boolean  @default(false)
+  tokenType   String?
+  firstSeen  DateTime?
+  lastSeen   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  tags        AddressTag[]
+  txFrom     Transaction[] @relation("TxFrom")
+  txTo       Transaction[] @relation("TxTo")
+  
+  @@unique([networkId, address])
+  @@index([address])
+  @@index([networkId, isContract])
+}
+
+model AddressTag {
+  id        String   @id @default(uuid())
+  addressId String
+  address   Address  @relation(fields: [addressId], references: [id])
+  tag       String
+  source    String?
+  confidence Float   @default(1.0)
+  createdAt DateTime @default(now())
+  
+  @@index([addressId])
+  @@index([tag])
+}
+
+model Transaction {
+  id              String   @id @default(uuid())
+  networkId       String
+  network         Network  @relation(fields: [networkId], references: [id])
+  txHash         String   @unique
+  blockId         String?
+  block           Block?   @relation(fields: [blockId], references: [id])
+  blockNumber    BigInt?
+  blockHash     String?
+  fromId        String?
+  from           Address? @relation("TxFrom", fields: [fromId], references: [id])
+  toId          String?
+  to             Address? @relation("TxTo", fields: [toId], references: [id])
+  value         String
+  gasPrice       BigInt?
+  gasLimit       BigInt?
+  gasUsed        BigInt?
+  nonce         Int?
+  input          String?
+  v             String?
+  r             String?
+  s             String?
+  status        Boolean?
+  timestamp     DateTime?
+  type          Int      @default(0)
+  maxFeePerGas   BigInt?
+  maxPriorityFeePerGas BigInt?
+  logs          TransactionLog[]
+  createdAt     DateTime @default(now())
+  indexedAt     DateTime @default(now())
+  riskScore     RiskScore?
+  
+  @@unique([networkId, txHash])
+  @@index([blockId])
+  @@index([blockNumber])
+  @@index([fromId])
+  @@index([toId])
+  @@index([timestamp])
+}
+
+model TransactionLog {
+  id            String   @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  logIndex      Int
+  address      String
+  topic0       String?
+  topic1       String?
+  topic2       String?
+  topic3       String?
+  data         String?
+  createdAt    DateTime @default(now())
+  
+  @@unique([transactionId, logIndex])
+  @@index([address])
+}
+
+model RiskScore {
+  id              String   @id @default(uuid())
+  transactionId   String   @unique
+  transaction     Transaction @relation(fields: [transactionId], references: [id])
+  overallScore    Float
+  riskLevel       RiskLevel
+  factors         Json
+  flags           String[]
+  checkedAt       DateTime @default(now())
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model IndexerState {
+  id              String   @id @default(uuid())
+  networkId       String   @unique
+  lastBlockNumber BigInt
+  lastBlockHash   String?
+  lastIndexedAt   DateTime @default(now())
+  status          IndexerStatus @default(RUNNING)
+  errorMessage   String?
+  
+  @@index([networkId])
+}
+
+enum IndexerStatus {
+  RUNNING
+  PAUSED
+  ERROR
+  STOPPED
+}
